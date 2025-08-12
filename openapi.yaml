@@ -1,0 +1,248 @@
+openapi: 3.0.3
+info:
+  title: Kitchen Challenge API
+  version: 1.0.0
+  description: >
+    API for managing kitchen orders, action ledger, and running the external challenge simulation.
+    Notes:
+    - `freshness` is in **seconds**.
+    - Action `timestamp` in the internal ledger is an ISO-8601 date-time; the outbound challenge uses **microseconds** (not exposed here).
+
+servers:
+  - url: http://localhost:8080
+
+tags:
+  - name: Kitchen
+    description: Kitchen order and simulation operations
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: query
+      name: auth
+
+  schemas:
+    Order:
+      type: object
+      description: Order to be placed into storages. Freshness budget is in seconds.
+      properties:
+        id:
+          type: string
+          example: abc123
+        name:
+          type: string
+          example: Cheese Pizza
+        temp:
+          type: string
+          enum: [HOT, COLD, ROOM]
+          example: HOT
+        freshness:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Freshness budget in seconds.
+          example: 120
+      required: [id, name, temp, freshness]
+
+    ActionEntity:
+      type: object
+      description: Ledger entry for an action performed by the system.
+      properties:
+        id:
+          type: integer
+          example: 1
+        timestamp:
+          type: string
+          format: date-time
+          example: 2025-08-06T14:23:45Z
+        orderId:
+          type: string
+          example: abc123
+        action:
+          type: string
+          enum: [PLACE, MOVE, PICKUP, DISCARD]
+          example: PLACE
+        target:
+          type: string
+          enum: [HEATER, COOLER, SHELF]
+          example: HEATER
+
+    ErrorResponse:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          example: 2025-08-06T14:30:00Z
+        status:
+          type: integer
+          example: 400
+        error:
+          type: string
+          example: Bad Request
+        message:
+          type: string
+          example: Invalid order ID
+        path:
+          type: string
+          example: /api/orders/123/pickup
+
+paths:
+  /api/orders:
+    post:
+      tags: [Kitchen]
+      summary: Place new order manually
+      operationId: placeOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Order'
+            examples:
+              sample:
+                summary: HOT order, 120s freshness
+                value:
+                  id: abc123
+                  name: Cheese Pizza
+                  temp: HOT
+                  freshness: 120
+      responses:
+        '200':
+          description: Order placed successfully (empty body)
+        '400':
+          description: Invalid request data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/orders/{id}/pickup:
+    post:
+      tags: [Kitchen]
+      summary: Pickup order by ID
+      description: >
+        Removes order from its current storage. Writes PICKUP if still fresh, or DISCARD if expired at removal time.
+      operationId: pickupOrder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: abc123
+      responses:
+        '200':
+          description: Pickup processed (empty body)
+        '404':
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/ledger:
+    get:
+      tags: [Kitchen]
+      summary: Get all actions from ledger
+      operationId: getLedger
+      responses:
+        '200':
+          description: List of kitchen actions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ActionEntity'
+              examples:
+                sample:
+                  value:
+                    - id: 1
+                      timestamp: 2025-08-06T14:23:45Z
+                      orderId: abc123
+                      action: PLACE
+                      target: HEATER
+                    - id: 2
+                      timestamp: 2025-08-06T14:24:10Z
+                      orderId: abc123
+                      action: PICKUP
+                      target: HEATER
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/simulation/run:
+    post:
+      tags: [Kitchen]
+      summary: Run kitchen simulation with Challenge API
+      description: >
+        Fire-and-forget starter for the simulation. Returns immediately with a message.
+        Use CLI or a blocking variant if you need to wait until the run is fully submitted to /solve.
+      operationId: runSimulation
+      parameters:
+        - name: ratePerSecond
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 2
+          description: Orders placed per second (>= 1).
+        - name: minPickupSec
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 4
+          description: Minimum seconds before an order is picked up.
+        - name: maxPickupSec
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 8
+          description: Maximum seconds before an order is picked up (>= minPickupSec).
+      responses:
+        '200':
+          description: Simulation started
+          content:
+            text/plain:
+              schema:
+                type: string
+              examples:
+                started:
+                  value: Simulation started with rate=2 orders/sec
+        '400':
+          description: Invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+security:
+  - ApiKeyAuth: []

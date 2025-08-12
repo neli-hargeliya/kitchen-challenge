@@ -1,0 +1,35 @@
+spring:
+  # Disable Spring Boot's automatic Docker Compose lifecycle (we control compose ourselves)
+  docker:
+    compose:
+      enabled: false
+
+  # Reactive Postgres connection (R2DBC for WebFlux + reactive repositories)
+  # Use env vars in Docker (set in docker-compose), fallback to localhost for local runs
+  r2dbc:
+    url: ${SPRING_R2DBC_URL:r2dbc:postgresql://localhost:5433/kitchen}
+    username: ${SPRING_R2DBC_USERNAME:postgres}
+    password: ${SPRING_R2DBC_PASSWORD:postgres}
+
+  # Flyway database migrations (JDBC)
+  flyway:
+    url: ${SPRING_FLYWAY_URL:jdbc:postgresql://localhost:5433/kitchen}
+    user: ${SPRING_FLYWAY_USER:postgres}
+    password: ${SPRING_FLYWAY_PASSWORD:postgres}
+    locations: classpath:db
+    connect-retries: 10
+
+  # Optional SQL init (schema.sql/data.sql) if you still use it
+  sql:
+    init:
+      mode: never
+
+springdoc:
+  swagger-ui:
+    url: /openapi.yaml      # Load API docs from this file
+    path: /swagger-ui.html  # Swagger UI endpoint
+
+# External challenge API configuration
+challenge:
+  base-url: https://api.cloudkitchens.com/interview/challenge
+  auth-token:   # replace with your real token

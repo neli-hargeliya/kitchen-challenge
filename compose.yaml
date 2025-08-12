@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:17
+    container_name: kitchen_postgres
+    environment:
+      POSTGRES_DB: kitchen            # Database name
+      POSTGRES_USER: postgres         # Database username
+      POSTGRES_PASSWORD: postgres     # Database password
+    ports:
+      - "5433:5432"                       # Expose Postgres to host machine
+    volumes:
+      - pg_data:/var/lib/postgresql/data  # Persist database data between restarts
+    healthcheck:                          # Health check to ensure Postgres is ready
+      test: ["CMD-SHELL", "pg_isready -U postgres -d kitchen -h 127.0.0.1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    container_name: kitchen_app
+    depends_on:
+      postgres:
+        condition: service_healthy        # Start app only when Postgres is healthy
+    ports:
+      - "8080:8080"                        # Expose app to host
+    environment:
+      # Activate docker profile if using Spring profiles
+      SPRING_PROFILES_ACTIVE: docker
+
+      # R2DBC connection for reactive Postgres
+      SPRING_R2DBC_URL: r2dbc:postgresql://postgres:5432/kitchen
+      SPRING_R2DBC_USERNAME: postgres
+      SPRING_R2DBC_PASSWORD: postgres
+
+      # Flyway migration settings (JDBC)
+      SPRING_FLYWAY_URL: jdbc:postgresql://postgres:5432/kitchen
+      SPRING_FLYWAY_USER: postgres
+      SPRING_FLYWAY_PASSWORD: postgres
+
+      # Disable Spring Boot automatic docker-compose integration
+      SPRING_DOCKER_COMPOSE_ENABLED: "false"
+
+      # Challenge API (picked from .env)
+      CHALLENGE_AUTH_TOKEN: ${CHALLENGE_AUTH_TOKEN}
+      CHALLENGE_BASE_URL: ${CHALLENGE_BASE_URL}
+
+  # Optional one-shot CLI runner for the challenge (use profile to avoid auto-start)
+  cli:
+    profiles: [cli]                    # run only when --profile cli is specified
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_R2DBC_URL: r2dbc:postgresql://postgres:5432/kitchen
+      SPRING_R2DBC_USERNAME: postgres
+      SPRING_R2DBC_PASSWORD: postgres
+      SPRING_FLYWAY_URL: jdbc:postgresql://postgres:5432/kitchen
+      SPRING_FLYWAY_USER: postgres
+      SPRING_FLYWAY_PASSWORD: postgres
+      CHALLENGE_AUTH_TOKEN: ${CHALLENGE_AUTH_TOKEN}
+      CHALLENGE_BASE_URL: ${CHALLENGE_BASE_URL}
+    # Run the CLI harness once and exit
+    command: ["java","-jar","/app/app.jar",
+              "--run-challenge",
+              "--challenge.rate=2",
+              "--challenge.min=4",
+              "--challenge.max=8"]
+    restart: "no"
+
+volumes:
+  pg_data:

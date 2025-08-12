@@ -1,0 +1,119 @@
+#@host = http://localhost:8080
+@id = ord-00487
+
+
+### Place order (manual)
+POST {{host}}/api/orders
+Content-Type: application/json
+
+{
+  "id": "ord-00487",
+  "name": "Ice Cream",
+  "temp": "COLD",
+  "freshness": 10
+}
+
+#### Pickup by ID
+#POST {{host}}/api/orders/{{id}}/pickup
+#
+#### Get ledger
+#GET {{host}}/api/ledger
+#
+#### Run simulation (fixed values)
+#POST {{host}}/api/simulation/run?ratePerSecond=2&minPickupSec=4&maxPickupSec=8
+#
+#### Run simulation with randomized params (1–4 orders/sec, pickup 4–6s, max 6–8s)
+#< {%
+#    // Random int in range inclusive
+#    function randInt(min, max) {
+#        return Math.floor(Math.random() * (max - min + 1)) + min;
+#    }
+#    request.variables.set("ratePerSecond", randInt(1, 4));
+#    request.variables.set("minPickupSec", randInt(4, 6));
+#    request.variables.set("maxPickupSec", randInt(6, 8));
+#%}
+#POST {{host}}/api/simulation/run?ratePerSecond={{ratePerSecond}}&minPickupSec={{minPickupSec}}&maxPickupSec={{maxPickupSec}}
+@host = http://localhost:8080
+@ct = application/json
+
+###
+# HEALTH CHECK (optional)
+GET {{host}}/actuator/health
+
+###
+# --- Scenario A: PLACE -> immediate PICKUP (expect PICKUP) ---
+@idA = ord-{{$timestamp}}-A
+POST {{host}}/api/orders
+Content-Type: {{ct}}
+
+{
+  "id": "{{idA}}",
+  "name": "Cheese Pizza",
+  "temp": "HOT",
+  "freshness": 120
+}
+
+###
+POST {{host}}/api/orders/{{idA}}/pickup
+
+###
+GET {{host}}/api/ledger
+
+
+###
+# --- Scenario B: DISCARD on non-ideal shelf ---
+# Fill COOLER (capacity=6) with COLD items so next COLD will land on SHELF.
+POST {{host}}/api/orders
+Content-Type: {{ct}}
+
+{"id":"cold-1","name":"Cola","temp":"COLD","freshness":60}
+
+###
+POST {{host}}/api/orders
+Content-Type: {{ct}}
+
+{"id":"cold-2","name":"Cola","temp":"COLD","freshness":60}
+
+###
+POST {{host}}/api/orders
+Content-Type: {{ct}}
+
+{"id":"cold-3","name":"Cola","temp":"COLD","freshness":60}
+
+###
+POST {{host}}/api/orders
+Content-Type: {{ct}}
+
+{"id":"cold-4","name":"Cola","temp":"COLD","freshness":60}
+
+###
+POST {{host}}/api/orders
+Content-Type: {{ct}}
+
+{"id":"cold-5","name":"Cola","temp":"COLD","freshness":60}
+
+###
+POST {{host}}/api/orders
+Content-Type: {{ct}}
+
+{"id":"cold-6","name":"Cola","temp":"COLD","freshness":60}
+
+###
+# 7th COLD with tiny freshness -> goes to SHELF (non-ideal), will expire fast.
+@expId = cold-expire-{{$timestamp}}
+POST {{host}}/api/orders
+Content-Type: {{ct}}
+
+{"id":"{{expId}}","name":"Ice Cream","temp":"COLD","freshness":2}
+
+###
+# Sleep ~3s to ensure expiry on SHELF (requires DebugController)
+GET {{host}}/debug/sleep?ms=3000
+
+###
+# PICKUP -> expect DISCARD for {{expId}}
+POST {{host}}/api/orders/{{expId}}/pickup
+
+###
+GET {{host}}/api/ledger
+
